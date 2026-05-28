@@ -73,6 +73,7 @@ Page(
     onInit() {
       this.build();
       this.refresh();
+      this.triggerMeasurement();
     },
 
     build() {
@@ -223,6 +224,38 @@ Page(
         this.state.avgWidget.setProperty(hmUI.prop.TEXT, "--");
         this.state.maxWidget.setProperty(hmUI.prop.TEXT, "--");
         this.state.countWidget.setProperty(hmUI.prop.TEXT, "No readings yet");
+      }
+    },
+
+    triggerMeasurement() {
+      this.state.currentWidget.setProperty(hmUI.prop.TEXT, "...");
+      try {
+        const sensor = new BloodOxygen();
+        let done = false;
+        const cb = () => {
+          if (done) return;
+          try {
+            const result = sensor.getCurrent();
+            if (result && result.retCode === 2 && result.value > 50) {
+              done = true;
+              this.state.currentWidget.setProperty(hmUI.prop.TEXT, String(result.value) + "%");
+              sensor.offChange(cb);
+              sensor.stop();
+            }
+          } catch (_) {}
+        };
+        sensor.onChange(cb);
+        sensor.start();
+        // Auto-cancel after 30s if no reading
+        setTimeout(() => {
+          if (!done) {
+            done = true;
+            try { sensor.offChange(cb); sensor.stop(); } catch (_) {}
+            this.state.currentWidget.setProperty(hmUI.prop.TEXT, "--");
+          }
+        }, 30000);
+      } catch (_) {
+        this.state.currentWidget.setProperty(hmUI.prop.TEXT, "--");
       }
     },
 
