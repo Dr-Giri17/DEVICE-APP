@@ -8,12 +8,30 @@ const logger = Logger.getLogger("health-sync");
 const W = 466;
 const H = 466;
 
+const SYNC_TIMEOUT_MS = 30000;
+
 function readSensor(fn) {
   try {
     return fn();
   } catch (_) {
     return null;
   }
+}
+
+function isoTimestamp() {
+  try {
+    return new Date().toISOString();
+  } catch (_) {
+    return String(Date.now());
+  }
+}
+
+function formatSteps(n) {
+  if (n === null || n === undefined) return "--";
+  const s = String(n);
+  if (s.length <= 3) return s;
+  if (s.length <= 6) return s.slice(0, -3) + "," + s.slice(-3);
+  return s.slice(0, -6) + "," + s.slice(-6, -3) + "," + s.slice(-3);
 }
 
 Page(
@@ -25,6 +43,7 @@ Page(
       sleepWidget: null,
       statusWidget: null,
       syncing: false,
+      syncTimer: null,
     },
 
     onInit() {
@@ -55,35 +74,17 @@ Page(
       this.buildRow(106, "Heart Rate", 0xff5555);
       this.state.hrWidget = this.buildValue(106);
 
-      hmUI.createWidget(hmUI.widget.FILL_RECT, {
-        x: 50,
-        y: 149,
-        w: 366,
-        h: 1,
-        color: 0x2a2a2a,
-      });
+      this.buildDivider(149);
 
       this.buildRow(157, "Steps", 0x55aaff);
       this.state.stepsWidget = this.buildValue(157);
 
-      hmUI.createWidget(hmUI.widget.FILL_RECT, {
-        x: 50,
-        y: 200,
-        w: 366,
-        h: 1,
-        color: 0x2a2a2a,
-      });
+      this.buildDivider(200);
 
       this.buildRow(208, "Calories", 0xffaa00);
       this.state.caloriesWidget = this.buildValue(208);
 
-      hmUI.createWidget(hmUI.widget.FILL_RECT, {
-        x: 50,
-        y: 251,
-        w: 366,
-        h: 1,
-        color: 0x2a2a2a,
-      });
+      this.buildDivider(251);
 
       this.buildRow(259, "Sleep", 0xaa88ff);
       this.state.sleepWidget = this.buildValue(259);
@@ -138,36 +139,37 @@ Page(
       });
     },
 
+    buildDivider(y) {
+      hmUI.createWidget(hmUI.widget.FILL_RECT, {
+        x: 50,
+        y,
+        w: 366,
+        h: 1,
+        color: 0x2a2a2a,
+      });
+    },
+
     loadData() {
       const hrVal = readSensor(() => new HeartRate().getLast());
-      if (hrVal > 0) {
-        this.state.hrWidget.setProperty(hmUI.prop.TEXT, `${hrVal} bpm`);
+      if (hrVal !== null && hrVal > 0) {
+        this.state.hrWidget.setProperty(hmUI.prop.TEXT, String(hrVal) + " bpm");
       }
 
       const stepVal = readSensor(() => new Step().getCurrent());
       if (stepVal !== null) {
-        this.state.stepsWidget.setProperty(
-          hmUI.prop.TEXT,
-          stepVal.toLocaleString()
-        );
+        this.state.stepsWidget.setProperty(hmUI.prop.TEXT, formatSteps(stepVal));
       }
 
       const calVal = readSensor(() => new Calorie().getCurrent());
       if (calVal !== null) {
-        this.state.caloriesWidget.setProperty(
-          hmUI.prop.TEXT,
-          `${calVal} kcal`
-        );
+        this.state.caloriesWidget.setProperty(hmUI.prop.TEXT, String(calVal) + " kcal");
       }
 
       const sleepInfo = readSensor(() => new Sleep().getInfo());
       if (sleepInfo && sleepInfo.totalTime > 0) {
         const h = Math.floor(sleepInfo.totalTime / 60);
         const m = sleepInfo.totalTime % 60;
-        this.state.sleepWidget.setProperty(
-          hmUI.prop.TEXT,
-          `${h}h ${m}m`
-        );
+        this.state.sleepWidget.setProperty(hmUI.prop.TEXT, String(h) + "h " + String(m) + "m");
       }
     },
 
@@ -176,6 +178,14 @@ Page(
       this.state.syncing = true;
 
       this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Syncing...");
+
+      // Safety timeout — reset state if no response in 30s
+      this.state.syncTimer = setTimeout(() => {
+        if (this.state.syncing) {
+          this.state.syncing = false;
+          this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Timeout — check WiFi");
+        }
+      }, SYNC_TIMEOUT_MS);
 
       const hrVal = readSensor(() => new HeartRate().getLast()) || 0;
       const stepVal = readSensor(() => new Step().getCurrent()) || 0;
@@ -187,7 +197,7 @@ Page(
       const sleepDeep = sleepInfo ? (sleepInfo.deepTime || 0) : 0;
 
       const payload = {
-        timestamp: new Date().toISOString(),
+        timestamp: isoTimestamp(),
         heartRate: hrVal > 0 ? hrVal : null,
         steps: stepVal,
         calories: calVal,
@@ -196,26 +206,27 @@ Page(
         deepSleepMinutes: sleepDeep,
       };
 
-      logger.log("syncing payload", JSON.stringify(payload));
+      logger.log("syncing payload: " + JSON.stringify(payload));
 
       this.request(
         { method: "SYNC_HEALTH", params: payload },
         (error, result) => {
+          clearTimeout(this.state.syncTimer);
           this.state.syncing = false;
+
           if (!error && result && result.success) {
-            this.state.statusWidget.setProperty(
-              hmUI.prop.TEXT,
-              "Synced successfully!"
-            );
+            this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Synced OK!");
           } else {
-            const msg = (result && result.error) ? result.error : "Sync failed";
+            const msg = (result && result.error) ? String(result.error) : "Sync failed";
+            logger.error("sync error: " + JSON.stringify({ error, result }));
             this.state.statusWidget.setProperty(hmUI.prop.TEXT, msg);
-            logger.error("sync error", error, result);
           }
         }
       );
     },
 
-    onDestroy() {},
+    onDestroy() {
+      if (this.state.syncTimer) clearTimeout(this.state.syncTimer);
+    },
   })
 );

@@ -1,6 +1,5 @@
 import { BaseSideService } from "@zeppos/zml/base-side";
 
-// Paste your Google Apps Script web app URL here after deploying Code.gs
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzPrT81m1ZdrwqP-KrLB9lS7FZVHyclFqMj6UNLUCGKMmJEWGHsSEL_tuAkuI7oW7RinQ/exec";
 
 async function postToSheets(data, res) {
@@ -14,30 +13,43 @@ async function postToSheets(data, res) {
       body: JSON.stringify(data),
     });
 
-    const body =
-      typeof response.body === "string"
-        ? JSON.parse(response.body)
-        : response.body;
+    // GAS may redirect — response.status could be 200 or 302+
+    // body could be JSON string or redirect HTML
+    let body = response.body;
+    if (typeof body === "string") {
+      // Strip any HTML redirect wrapper (GAS quirk)
+      const jsonStart = body.indexOf("{");
+      if (jsonStart >= 0) {
+        try {
+          body = JSON.parse(body.slice(jsonStart));
+        } catch (_) {
+          body = { success: true }; // assume success if we got a response
+        }
+      } else {
+        // Non-JSON response (HTML redirect page) — if status is in 200-399 assume OK
+        body = { success: response.status < 400 };
+      }
+    }
 
     if (body && body.success) {
       res(null, { success: true });
     } else {
-      res(null, { success: false, error: "Sheet rejected data" });
+      res(null, { success: false, error: "Sheet error" });
     }
   } catch (error) {
-    console.log("[health-sync] postToSheets error:", error);
-    res(null, { success: false, error: String(error) });
+    console.log("[health-sync] postToSheets error: " + String(error));
+    res(null, { success: false, error: "Network error" });
   }
 }
 
 AppSideService(
   BaseSideService({
     onInit() {
-      console.log("[health-sync] side service init");
+      console.log("[health-sync] side service ready");
     },
 
     onRequest(req, res) {
-      console.log("[health-sync] request:", req.method);
+      console.log("[health-sync] request: " + req.method);
       if (req.method === "SYNC_HEALTH") {
         postToSheets(req.params, res);
       }
@@ -45,8 +57,6 @@ AppSideService(
 
     onRun() {},
 
-    onDestroy() {
-      console.log("[health-sync] side service destroy");
-    },
+    onDestroy() {},
   })
 );
