@@ -1,7 +1,7 @@
 import { BaseSideService } from "@zeppos/zml/base-side";
 
 // Paste your Google Apps Script web app URL here after deploying Code.gs
-const SHEETS_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzPrT81m1ZdrwqP-KrLB9lS7FZVHyclFqMj6UNLUCGKMmJEWGHsSEL_tuAkuI7oW7RinQ/exec";
 
 async function postToSheets(data, res) {
   try {
