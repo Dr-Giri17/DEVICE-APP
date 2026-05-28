@@ -9,6 +9,11 @@ on:
       - "dist/**"
       - "README.md"
 
+env:
+  # Opt GitHub JavaScript actions into the upcoming Node.js 24 runtime.
+  # The app build itself still uses Node.js 20 for Zeus CLI compatibility.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: read
   actions: read
@@ -22,7 +27,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js for Zeus build
         uses: actions/setup-node@v4
         with:
           node-version: "20"
