@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es6",
+    "checkJs": true,
+    "allowJs": true,
+    "baseUrl": ".",
+    "paths": {
+      "@zos/*": ["./node_modules/@zeppos/device-types/dist/*"]
+    }
+  },
+  "exclude": ["node_modules"]
+}

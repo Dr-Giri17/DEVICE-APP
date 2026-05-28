@@ -1,0 +1,12 @@
+{
+  "name": "health-sync",
+  "version": "1.0.0",
+  "main": "app.js",
+  "license": "ISC",
+  "dependencies": {
+    "@zeppos/zml": "^0.0.9"
+  },
+  "devDependencies": {
+    "@zeppos/device-types": "^3.0.0"
+  }
+}
