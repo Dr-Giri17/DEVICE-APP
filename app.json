@@ -1,7 +1,7 @@
 {
   "configVersion": "v3",
   "app": {
-    "appId": 0,
+    "appId": 20001,
     "appName": "HealthSync",
     "appType": "app",
     "version": {
