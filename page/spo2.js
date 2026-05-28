@@ -1,6 +1,6 @@
 import * as hmUI from "@zos/ui";
 import { BasePage } from "@zeppos/zml/base-page";
-import { BloodOxygen } from "@zos/sensor";
+import { BloodOxygen, Battery } from "@zos/sensor";
 import { localStorage } from "@zos/storage";
 
 const W = 466;
@@ -53,6 +53,10 @@ function getCurrentSpO2() {
 
 function isEnabled() {
   return localStorage.getItem("spo2_enabled") !== "false";
+}
+
+function getBatteryLevel() {
+  try { return new Battery().getCurrent(); } catch (_) { return 100; }
 }
 
 Page(
@@ -212,6 +216,15 @@ Page(
 
       const current = getCurrentSpO2();
       this.state.currentWidget.setProperty(hmUI.prop.TEXT, current > 0 ? String(current) + "%" : "--");
+
+      const bat = getBatteryLevel();
+      if (bat <= 5) {
+        this.state.statusText.setProperty(hmUI.prop.TEXT, "⚠ Battery " + String(bat) + "% — paused");
+      } else if (enabled) {
+        this.state.statusText.setProperty(hmUI.prop.TEXT, "Active 22:00 – 08:00");
+      } else {
+        this.state.statusText.setProperty(hmUI.prop.TEXT, "Monitoring disabled");
+      }
 
       const { stats } = getNightStats();
       if (stats) {

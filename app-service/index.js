@@ -1,4 +1,4 @@
-import { BloodOxygen } from "@zos/sensor";
+import { BloodOxygen, Battery } from "@zos/sensor";
 import { localStorage } from "@zos/storage";
 
 const INTERVAL_MS = 10 * 60 * 1000;
@@ -19,6 +19,20 @@ function isNightHour() {
 
 function isEnabled() {
   return localStorage.getItem("spo2_enabled") !== "false";
+}
+
+function getBattery() {
+  try { return new Battery().getCurrent(); } catch (_) { return 100; }
+}
+
+function hasBattery() {
+  const level = getBattery();
+  if (level <= 5) {
+    localStorage.setItem("spo2_lowbat", "1");
+    return false;
+  }
+  localStorage.setItem("spo2_lowbat", "0");
+  return true;
 }
 
 function saveReading(value) {
@@ -65,12 +79,12 @@ function startMeasurement() {
 AppService({
   onInit() {
     if (!isEnabled()) return;
-    if (isNightHour()) {
+    if (isNightHour() && hasBattery()) {
       startMeasurement();
     }
     svcState.intervalId = setInterval(() => {
       if (!isEnabled()) return;
-      if (isNightHour()) {
+      if (isNightHour() && hasBattery()) {
         startMeasurement();
       }
     }, INTERVAL_MS);
