@@ -167,13 +167,14 @@ Page(
 
       hmUI.createWidget(hmUI.widget.FILL_RECT, { x: 50, y: 296, w: 366, h: 1, color: 0x2a2a2a });
 
-      // Toggle button
+      // Toggle button — text set in refresh() via prop.MORE
+      const initEnabled = isEnabled();
       this.state.toggleBtn = hmUI.createWidget(hmUI.widget.BUTTON, {
         x: 83, y: 308, w: 300, h: 52,
-        text: "...",
+        text: initEnabled ? "STOP MONITORING" : "START MONITORING",
         text_size: 22,
-        normal_color: 0x1a3a1a,
-        press_color: 0x0d200d,
+        normal_color: initEnabled ? 0x3a1a1a : 0x1a3a1a,
+        press_color: initEnabled ? 0x200d0d : 0x0d200d,
         radius: 26,
         click_func: () => this.toggleMonitoring(),
       });
@@ -202,8 +203,8 @@ Page(
       const enabled = isEnabled();
 
       this.state.statusValueWidget.setProperty(hmUI.prop.TEXT, enabled ? "● ON" : "○ OFF");
-      this.state.toggleBtn.setProperty(hmUI.prop.TEXT, enabled ? "STOP MONITORING" : "START MONITORING");
       this.state.toggleBtn.setProperty(hmUI.prop.MORE, {
+        text: enabled ? "STOP MONITORING" : "START MONITORING",
         normal_color: enabled ? 0x3a1a1a : 0x1a3a1a,
         press_color: enabled ? 0x200d0d : 0x0d200d,
       });
