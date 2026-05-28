@@ -7,26 +7,17 @@ async function postToSheets(data, res) {
     const response = await fetch({
       url: SHEETS_URL,
       method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8",
-      },
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(data),
     });
 
-    // GAS may redirect — response.status could be 200 or 302+
-    // body could be JSON string or redirect HTML
     let body = response.body;
     if (typeof body === "string") {
-      // Strip any HTML redirect wrapper (GAS quirk)
       const jsonStart = body.indexOf("{");
       if (jsonStart >= 0) {
-        try {
-          body = JSON.parse(body.slice(jsonStart));
-        } catch (_) {
-          body = { success: true }; // assume success if we got a response
-        }
+        try { body = JSON.parse(body.slice(jsonStart)); }
+        catch (_) { body = { success: true }; }
       } else {
-        // Non-JSON response (HTML redirect page) — if status is in 200-399 assume OK
         body = { success: response.status < 400 };
       }
     }
@@ -52,11 +43,12 @@ AppSideService(
       console.log("[health-sync] request: " + req.method);
       if (req.method === "SYNC_HEALTH") {
         postToSheets(req.params, res);
+      } else if (req.method === "SYNC_SPO2") {
+        postToSheets(req.params, res);
       }
     },
 
     onRun() {},
-
     onDestroy() {},
   })
 );

@@ -5,8 +5,8 @@
     "appName": "HealthSync",
     "appType": "app",
     "version": {
-      "code": 2,
-      "name": "1.0.1"
+      "code": 3,
+      "name": "1.1.0"
     },
     "icon": "icon.png",
     "vender": "dev",
@@ -18,7 +18,9 @@
     "data:user.hd.heart_rate",
     "data:user.hd.step",
     "data:user.hd.calories",
-    "data:user.hd.sleep"
+    "data:user.hd.sleep",
+    "data:user.hd.spo2",
+    "device:os.bg_service"
   ],
   "runtime": {
     "apiVersion": {
@@ -31,10 +33,13 @@
     "active-2-round": {
       "module": {
         "page": {
-          "pages": ["page/index"]
+          "pages": ["page/index", "page/spo2"]
         },
         "app-side": {
           "path": "app-side/index"
+        },
+        "app-service": {
+          "services": ["app-service/index"]
         }
       },
       "platforms": [
