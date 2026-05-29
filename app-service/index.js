@@ -1,11 +1,11 @@
 import { BloodOxygen, Battery, HeartRate, Stress, Step, Calorie } from "@zos/sensor";
 import { localStorage } from "@zos/storage";
 
-const SPO2_INTERVAL_MS = 5 * 60 * 1000;    // Night SpO2 every 5 min
-const DAY_INTERVAL_MS  = 60 * 60 * 1000;   // Day checkup every 60 min
-const MEASURE_TIMEOUT  = 2 * 60 * 1000;    // SpO2 max measurement window
-const HRV_WINDOW_MS    = 60 * 1000;        // HRV recording window 60 sec
-const HRV_MIN_GAP_MS   = 50 * 60 * 1000;  // At least 50 min between HRV sessions
+const SPO2_INTERVAL_MS = 5 * 60 * 1000;
+const DAY_INTERVAL_MS  = 60 * 60 * 1000;
+const MEASURE_TIMEOUT  = 2 * 60 * 1000;
+const HRV_WINDOW_MS    = 60 * 1000;
+const HRV_MIN_GAP_MS   = 50 * 60 * 1000;
 
 const DURATION_MS_OPTIONS = [
   30 * 60 * 1000, 60 * 60 * 1000,
@@ -44,7 +44,33 @@ function hasBattery() {
   return lvl > 5;
 }
 
-// ── SpO2 night sensor ───────────────────────────────────────────────────────
+// ── Passive sensor instances — created ONCE, reused forever ────────────────
+// Each hourly checkup reuses these instead of allocating new objects.
+const passive = { hr: null, step: null, cal: null, stress: null, bo: null };
+
+function initPassiveSensors() {
+  try { passive.hr     = new HeartRate();   } catch (_) {}
+  try { passive.step   = new Step();        } catch (_) {}
+  try { passive.cal    = new Calorie();     } catch (_) {}
+  try { passive.stress = new Stress();      } catch (_) {}
+  try { passive.bo     = new BloodOxygen(); } catch (_) {}
+  console.log("[svc] passive sensors ready");
+}
+
+function passiveRead() {
+  let hr = 0, steps = 0, cal = 0, stress = 0, spo2 = 0;
+  try { const v = passive.hr     && passive.hr.getLast();      if (v > 0)  hr     = v; } catch (_) {}
+  try { const v = passive.step   && passive.step.getCurrent(); if (v >= 0) steps  = v; } catch (_) {}
+  try { const v = passive.cal    && passive.cal.getCurrent();  if (v >= 0) cal    = v; } catch (_) {}
+  try { const v = passive.stress && passive.stress.getCurrent();if (v >= 0) stress = v; } catch (_) {}
+  try {
+    const r = passive.bo && passive.bo.getCurrent();
+    if (r && r.retCode === 2 && r.value > 50) spo2 = r.value;
+  } catch (_) {}
+  return { hr, steps, cal, stress, spo2 };
+}
+
+// ── Active SpO2 night measurement ───────────────────────────────────────────
 
 const svcState = {
   sensor: null,
@@ -52,18 +78,23 @@ const svcState = {
   measureTimeout: null,
   spo2IntervalId: null,
   dayIntervalId: null,
-  lastHrvTime: 0,       // shared across day/night to prevent double HRV
+  lastHrvTime: 0,
+  hrvRunning: false,
 };
 
 function stopSensor() {
-  if (svcState.measureTimeout) { clearTimeout(svcState.measureTimeout); svcState.measureTimeout = null; }
-  if (svcState.sensor) {
-    if (svcState.onChangeCb) {
-      try { svcState.sensor.offChange(svcState.onChangeCb); } catch (_) {}
-      svcState.onChangeCb = null;
-    }
-    try { svcState.sensor.stop(); } catch (_) {}
-    svcState.sensor = null;
+  // Null state BEFORE try-catch so cleanup is always complete
+  const timeout = svcState.measureTimeout;
+  const sensor  = svcState.sensor;
+  const cb      = svcState.onChangeCb;
+  svcState.measureTimeout = null;
+  svcState.sensor         = null;
+  svcState.onChangeCb     = null;
+
+  if (timeout) clearTimeout(timeout);
+  if (sensor) {
+    if (cb) { try { sensor.offChange(cb); } catch (_) {} }
+    try { sensor.stop(); } catch (_) {}
   }
 }
 
@@ -79,8 +110,9 @@ function saveSpO2(value) {
 }
 
 function startSpO2Measurement() {
-  console.log("[svc] SpO2 start bat=" + getBattery() + "%");
+  console.log("[svc] SpO2 start");
   stopSensor();
+
   const sensor = new BloodOxygen();
   svcState.sensor = sensor;
   let done = false;
@@ -89,12 +121,9 @@ function startSpO2Measurement() {
     if (done) return;
     try {
       const r = sensor.getCurrent();
-      const rc = r ? r.retCode : -1;
-      const v  = r ? r.value   : 0;
-      console.log("[svc] SpO2 retCode=" + rc + " val=" + v);
-      if (rc === 2 && v > 50) {
+      if (r && r.retCode === 2 && r.value > 50) {
         done = true;
-        saveSpO2(v);
+        saveSpO2(r.value);
         setTimeout(function() { stopSensor(); }, 0);
       }
     } catch (e) { console.log("[svc] SpO2 err: " + String(e)); }
@@ -112,7 +141,7 @@ function startSpO2Measurement() {
 function checkNightSpO2() {
   if (!isNightEnabled()) return;
   if (isNightExpired()) {
-    console.log("[svc] night session expired — disabling");
+    console.log("[svc] night expired — disabling");
     localStorage.setItem("spo2_enabled", "false");
     stopSensor();
     return;
@@ -123,12 +152,16 @@ function checkNightSpO2() {
 // ── HRV active session (60-second window) ──────────────────────────────────
 
 function runHrvSession(onDone) {
+  if (svcState.hrvRunning) { console.log("[svc] HRV already running, skip"); return; }
+  if (svcState.sensor)     { console.log("[svc] SpO2 active, skip HRV");    return; }
+
+  svcState.hrvRunning  = true;
   svcState.lastHrvTime = Date.now();
   console.log("[svc] HRV session start");
 
   const sensor = new HeartRate();
-  const hrs = [];
-  const rrs = [];
+  const hrs    = [];
+  const rrs    = [];
 
   const cb = function() {
     try {
@@ -144,6 +177,7 @@ function runHrvSession(onDone) {
 
   setTimeout(function() {
     try { sensor.offChange(cb); sensor.stop(); } catch (_) {}
+    svcState.hrvRunning = false;
 
     let avgHr = 0, rmssd = 0;
     if (hrs.length > 0) {
@@ -153,10 +187,7 @@ function runHrvSession(onDone) {
     }
     if (rrs.length > 1) {
       let sq = 0;
-      for (let i = 1; i < rrs.length; i++) {
-        const d = rrs[i] - rrs[i - 1];
-        sq += d * d;
-      }
+      for (let i = 1; i < rrs.length; i++) { const d = rrs[i] - rrs[i - 1]; sq += d * d; }
       rmssd = Math.round(Math.sqrt(sq / (rrs.length - 1)));
     }
     console.log("[svc] HRV done hr=" + avgHr + " rmssd=" + rmssd + " rr=" + rrs.length);
@@ -164,43 +195,40 @@ function runHrvSession(onDone) {
   }, HRV_WINDOW_MS);
 }
 
-// ── Hourly day checkup ──────────────────────────────────────────────────────
+// ── Hourly day checkup (24/7) ───────────────────────────────────────────────
 
 function saveCheckup(entry) {
   const key = dayKey("checkup_");
   let arr;
   try { arr = JSON.parse(localStorage.getItem(key) || "[]"); } catch (_) { arr = []; }
   arr.push(entry);
-  if (arr.length > 48) arr = arr.slice(-48); // max 48 per day
+  if (arr.length > 48) arr = arr.slice(-48);
   localStorage.setItem(key, JSON.stringify(arr));
-  console.log("[svc] checkup hr=" + entry.hr + " steps=" + entry.steps + " stress=" + entry.stress + " rmssd=" + entry.rmssd);
+  console.log("[svc] checkup hr=" + entry.hr + " steps=" + entry.steps +
+    " stress=" + entry.stress + " rmssd=" + entry.rmssd);
 }
 
 function dayCheckup() {
   console.log("[svc] day checkup");
-  const ts = Date.now();
+  const ts  = Date.now();
+  const now = ts;
 
-  // Passive reads — no sensor activation needed
-  let hr = 0, steps = 0, cal = 0, spo2 = 0, stress = 0;
-  try { const v = new HeartRate().getLast();         if (v > 0)  hr    = v; } catch (_) {}
-  try { const v = new Step().getCurrent();           if (v >= 0) steps = v; } catch (_) {}
-  try { const v = new Calorie().getCurrent();        if (v >= 0) cal   = v; } catch (_) {}
-  try {
-    const r = new BloodOxygen().getCurrent();
-    if (r && r.retCode === 2 && r.value > 50) spo2 = r.value;
-  } catch (_) {}
-  try { const v = new Stress().getCurrent();         if (v >= 0) stress = v; } catch (_) {}
+  // Passive reads — reuse cached sensor instances, zero new allocations
+  const reads = passiveRead();
 
-  const hrvDue = Date.now() - svcState.lastHrvTime >= HRV_MIN_GAP_MS;
+  const hrvDue = !svcState.hrvRunning &&
+                 !svcState.sensor &&
+                 (now - svcState.lastHrvTime >= HRV_MIN_GAP_MS);
 
   if (hrvDue) {
-    // 60-second active HRV session — runs after passive reads
     runHrvSession(function(avgHr, rmssd, rrCount) {
-      if (avgHr > 0) hr = avgHr; // prefer fresh active reading
-      saveCheckup({ t: ts, hr, steps, cal, spo2, stress, rmssd, rrCount });
+      const hr = avgHr > 0 ? avgHr : reads.hr;
+      saveCheckup({ t: ts, hr, steps: reads.steps, cal: reads.cal,
+                    spo2: reads.spo2, stress: reads.stress, rmssd, rrCount });
     });
   } else {
-    saveCheckup({ t: ts, hr, steps, cal, spo2, stress, rmssd: 0, rrCount: 0 });
+    saveCheckup({ t: ts, hr: reads.hr, steps: reads.steps, cal: reads.cal,
+                  spo2: reads.spo2, stress: reads.stress, rmssd: 0, rrCount: 0 });
   }
 }
 
@@ -208,19 +236,21 @@ function dayCheckup() {
 
 AppService({
   onInit() {
-    console.log("[svc] onInit bat=" + getBattery() + "% nightEnabled=" + isNightEnabled());
+    console.log("[svc] onInit bat=" + getBattery() + "% night=" + isNightEnabled());
 
-    // Immediate checkup on service start
+    // Create passive sensors ONCE — reused for all subsequent checkups
+    initPassiveSensors();
+
+    // Initial checkup and night-mode check
     dayCheckup();
     checkNightSpO2();
 
-    // Night SpO2 every 5 min (only measures when night mode is active)
+    // Night SpO2 every 5 min (only runs measurement when night mode is active)
     svcState.spo2IntervalId = setInterval(function() {
-      console.log("[svc] SpO2 tick");
       checkNightSpO2();
     }, SPO2_INTERVAL_MS);
 
-    // Day checkup every 60 min — always running, 24/7
+    // Day checkup every 60 min — always on, 24/7
     svcState.dayIntervalId = setInterval(function() {
       dayCheckup();
     }, DAY_INTERVAL_MS);
