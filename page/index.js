@@ -2,14 +2,16 @@ import * as hmUI from "@zos/ui";
 import { log as Logger } from "@zos/utils";
 import { BasePage } from "@zeppos/zml/base-page";
 import { HeartRate, Calorie, Step, Sleep, BloodOxygen } from "@zos/sensor";
+import { localStorage } from "@zos/storage";
 import { push } from "@zos/router";
 
 const logger = Logger.getLogger("health-sync");
 
 const W = 466;
 const H = 466;
-
 const SYNC_TIMEOUT_MS = 30000;
+
+function pad2(n) { return n < 10 ? "0" + n : String(n); }
 
 function readSensor(fn) {
   try { return fn(); } catch (_) { return null; }
@@ -17,6 +19,15 @@ function readSensor(fn) {
 
 function isoTimestamp() {
   try { return new Date().toISOString(); } catch (_) { return String(Date.now()); }
+}
+
+function getTodayStr() {
+  const d = new Date();
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+}
+
+function isSleepSyncedToday() {
+  return localStorage.getItem("sleep_sync_date") === getTodayStr();
 }
 
 function formatSteps(n) {
@@ -98,7 +109,7 @@ Page(
 
       this.state.statusWidget = hmUI.createWidget(hmUI.widget.TEXT, {
         x: 0, y: 414, w: W, h: 28,
-        text: "Tap to upload to Sheets",
+        text: "",
         text_size: 18,
         color: 0x666666,
         align_h: hmUI.align.CENTER_H,
@@ -153,6 +164,13 @@ Page(
       if (boResult && boResult.retCode === 2 && boResult.value > 50) {
         this.state.spo2Widget.setProperty(hmUI.prop.TEXT, String(boResult.value) + "%");
       }
+
+      // Show status hint: what the next sync will include
+      if (isSleepSyncedToday()) {
+        this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Sleep logged today — metrics only");
+      } else {
+        this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Tap to upload to Sheets");
+      }
     },
 
     syncData() {
@@ -167,28 +185,32 @@ Page(
         }
       }, SYNC_TIMEOUT_MS);
 
+      // Real-time metrics — always sent
       const hrVal = readSensor(() => new HeartRate().getLast()) || 0;
       const stepVal = readSensor(() => new Step().getCurrent()) || 0;
       const calVal = readSensor(() => new Calorie().getCurrent()) || 0;
-
-      const sleepInfo = readSensor(() => new Sleep().getInfo());
-      const sleepScore = sleepInfo ? (sleepInfo.score || 0) : 0;
-      const sleepTotal = sleepInfo ? (sleepInfo.totalTime || 0) : 0;
-      const sleepDeep = sleepInfo ? (sleepInfo.deepTime || 0) : 0;
-
       const boResult = readSensor(() => new BloodOxygen().getCurrent());
       const bloodOxygen = (boResult && boResult.retCode === 2 && boResult.value > 50)
         ? boResult.value : null;
 
+      // Daily sleep data — only if not yet synced today and data is available
+      const sleepSyncedToday = isSleepSyncedToday();
+      const sleepInfo = !sleepSyncedToday ? readSensor(() => new Sleep().getInfo()) : null;
+      const hasSleepData = !!(sleepInfo && sleepInfo.totalTime > 0);
+
       const payload = {
+        type: "health",
         timestamp: isoTimestamp(),
+        // Time-series metrics (every sync)
         heartRate: hrVal > 0 ? hrVal : null,
         steps: stepVal,
         calories: calVal,
-        sleepScore,
-        sleepMinutes: sleepTotal,
-        deepSleepMinutes: sleepDeep,
         bloodOxygen,
+        // Daily summary (once per day, null when already sent)
+        hasSleepData,
+        sleepScore: hasSleepData ? (sleepInfo.score || 0) : null,
+        sleepMinutes: hasSleepData ? (sleepInfo.totalTime || 0) : null,
+        deepSleepMinutes: hasSleepData ? (sleepInfo.deepTime || 0) : null,
       };
 
       logger.log("syncing payload: " + JSON.stringify(payload));
@@ -199,7 +221,11 @@ Page(
           clearTimeout(this.state.syncTimer);
           this.state.syncing = false;
           if (!error && result && result.success) {
-            this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Synced OK!");
+            if (hasSleepData) {
+              localStorage.setItem("sleep_sync_date", getTodayStr());
+            }
+            const suffix = hasSleepData ? " + sleep" : " (metrics)";
+            this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Synced OK!" + suffix);
           } else {
             const msg = (result && result.error) ? String(result.error) : "Sync failed";
             logger.error("sync error: " + JSON.stringify({ error, result }));

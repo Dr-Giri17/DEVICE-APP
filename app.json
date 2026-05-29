@@ -5,8 +5,8 @@
     "appName": "HealthSync",
     "appType": "app",
     "version": {
-      "code": 6,
-      "name": "1.4.0"
+      "code": 7,
+      "name": "1.5.0"
     },
     "icon": "icon.png",
     "vender": "dev",
