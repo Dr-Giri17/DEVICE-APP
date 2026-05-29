@@ -255,7 +255,7 @@ function dayCheckup() {
 
 AppService({
   onInit() {
-    console.log("[svc] onInit bat=" + getBattery() + "% night=" + isNightEnabled());
+    console.log("[svc] ===== SERVICE STARTED ===== bat=" + getBattery() + "% night=" + isNightEnabled());
 
     // Create passive sensors ONCE — reused for all subsequent checkups
     initPassiveSensors();
