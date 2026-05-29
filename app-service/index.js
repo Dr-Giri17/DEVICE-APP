@@ -65,7 +65,7 @@ function passiveRead() {
   try { const v = passive.stress && passive.stress.getCurrent();if (v >= 0) stress = v; } catch (_) {}
   try {
     const r = passive.bo && passive.bo.getCurrent();
-    if (r && r.retCode === 2 && r.value > 50) spo2 = r.value;
+    if (r && r.value > 50 && r.value <= 100) spo2 = r.value;
   } catch (_) {}
   return { hr, steps, cal, stress, spo2 };
 }
@@ -121,7 +121,7 @@ function startSpO2Measurement() {
     if (done) return;
     try {
       const r = sensor.getCurrent();
-      if (r && r.retCode === 2 && r.value > 50) {
+      if (r && (r.retCode === 2 || r.retCode === 1) && r.value > 50 && r.value <= 100) {
         done = true;
         saveSpO2(r.value);
         setTimeout(function() { stopSensor(); }, 0);
@@ -146,7 +146,19 @@ function checkNightSpO2() {
     stopSensor();
     return;
   }
-  if (hasBattery()) startSpO2Measurement();
+  if (!hasBattery()) return;
+
+  // Try passive read first — if the background sensor already has a value, use it
+  try {
+    const r = passive.bo && passive.bo.getCurrent();
+    if (r && r.value > 50 && r.value <= 100) {
+      console.log("[svc] SpO2 passive=" + r.value + " rc=" + r.retCode);
+      saveSpO2(r.value);
+      return;
+    }
+  } catch (_) {}
+
+  startSpO2Measurement();
 }
 
 // ── HRV active session (60-second window) ──────────────────────────────────
