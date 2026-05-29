@@ -42,6 +42,18 @@ function doPost(e) {
         var date = (data.timestamp || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
         upsertDailySummary(date, data.sleepScore || 0, data.sleepMinutes || 0, data.deepSleepMinutes || 0);
       }
+
+      // 3. Append new HRV readings (only new ones since last sync — no duplicates)
+      if (data.hrvReadings && data.hrvReadings.length > 0) {
+        var hrvSheet = getOrCreateHrvSheet();
+        var syncDate = (data.timestamp || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
+        for (var i = 0; i < data.hrvReadings.length; i++) {
+          var r = data.hrvReadings[i];
+          var ts = r.t ? new Date(r.t).toISOString() : data.timestamp;
+          // r.h = avg HR, r.s = stress, r.r = RMSSD, r.n = RR interval count
+          hrvSheet.appendRow([ts, syncDate, r.h || "", r.s || "", r.r || 0, r.n || 0]);
+        }
+      }
     }
 
     return jsonResponse({ success: true });
@@ -87,6 +99,18 @@ function upsertDailySummary(date, sleepScore, sleepMinutes, deepSleepMinutes) {
   }
   // New date — append a fresh row
   sheet.appendRow([date, sleepScore, sleepMinutes, deepSleepMinutes, updatedAt]);
+}
+
+// HRVLog: one row per hourly HRV measurement session
+function getOrCreateHrvSheet() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("HRVLog");
+  if (!sheet) {
+    sheet = ss.insertSheet("HRVLog");
+    sheet.appendRow(["Timestamp", "Date", "Avg HR (bpm)", "Stress (0-100)", "RMSSD (ms)", "RR Intervals Count"]);
+    sheet.getRange(1, 1, 1, 6).setFontWeight("bold");
+  }
+  return sheet;
 }
 
 // SpO2: overnight session summaries from the SpO2 Monitor page

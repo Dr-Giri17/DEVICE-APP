@@ -30,6 +30,16 @@ function isSleepSyncedToday() {
   return localStorage.getItem("sleep_sync_date") === getTodayStr();
 }
 
+function getNewHrvReadings() {
+  const todayStr = getTodayStr();
+  const key = "hrv_" + todayStr;
+  const syncKey = "hrv_sync_" + todayStr;
+  let all = [];
+  try { all = JSON.parse(localStorage.getItem(key) || "[]"); } catch (_) {}
+  const synced = parseInt(localStorage.getItem(syncKey) || "0", 10);
+  return { all, newReadings: all.slice(synced), syncKey };
+}
+
 function formatSteps(n) {
   if (n === null || n === undefined) return "--";
   const s = String(n);
@@ -198,6 +208,9 @@ Page(
       const sleepInfo = !sleepSyncedToday ? readSensor(() => new Sleep().getInfo()) : null;
       const hasSleepData = !!(sleepInfo && sleepInfo.totalTime > 0);
 
+      // HRV readings from background service — only new ones since last sync
+      const { all: allHrv, newReadings: newHrv, syncKey: hrvSyncKey } = getNewHrvReadings();
+
       const payload = {
         type: "health",
         timestamp: isoTimestamp(),
@@ -206,11 +219,13 @@ Page(
         steps: stepVal,
         calories: calVal,
         bloodOxygen,
-        // Daily summary (once per day, null when already sent)
+        // Daily summary (once per day)
         hasSleepData,
         sleepScore: hasSleepData ? (sleepInfo.score || 0) : null,
         sleepMinutes: hasSleepData ? (sleepInfo.totalTime || 0) : null,
         deepSleepMinutes: hasSleepData ? (sleepInfo.deepTime || 0) : null,
+        // HRV log (new readings since last sync)
+        hrvReadings: newHrv.length > 0 ? newHrv : null,
       };
 
       logger.log("syncing payload: " + JSON.stringify(payload));
@@ -221,11 +236,12 @@ Page(
           clearTimeout(this.state.syncTimer);
           this.state.syncing = false;
           if (!error && result && result.success) {
-            if (hasSleepData) {
-              localStorage.setItem("sleep_sync_date", getTodayStr());
-            }
-            const suffix = hasSleepData ? " + sleep" : " (metrics)";
-            this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Synced OK!" + suffix);
+            if (hasSleepData) localStorage.setItem("sleep_sync_date", getTodayStr());
+            if (newHrv.length > 0) localStorage.setItem(hrvSyncKey, String(allHrv.length));
+            let msg = "Synced OK!";
+            if (hasSleepData) msg += " +sleep";
+            if (newHrv.length > 0) msg += " +" + newHrv.length + " HRV";
+            this.state.statusWidget.setProperty(hmUI.prop.TEXT, msg);
           } else {
             const msg = (result && result.error) ? String(result.error) : "Sync failed";
             logger.error("sync error: " + JSON.stringify({ error, result }));
