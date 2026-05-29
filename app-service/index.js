@@ -284,6 +284,8 @@ function dayCheckup() {
 
 AppService({
   onInit() {
+    // Write startup timestamp so the page can confirm the service is running
+    localStorage.setItem("svc_last_start", String(Date.now()));
     console.log("[svc] ===== SERVICE STARTED ===== bat=" + getBattery() + "% night=" + isNightEnabled());
 
     // One-shot cleanup of storage older than 30 days

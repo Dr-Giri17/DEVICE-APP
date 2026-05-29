@@ -3,7 +3,7 @@ import { log as Logger } from "@zos/utils";
 import { BasePage } from "@zeppos/zml/base-page";
 import { HeartRate, Calorie, Step, Sleep, BloodOxygen } from "@zos/sensor";
 import { localStorage } from "@zos/storage";
-import { push } from "@zos/router";
+import { push, startService } from "@zos/router";
 
 const logger = Logger.getLogger("health-sync");
 
@@ -67,11 +67,23 @@ Page(
       sleepWidget: null,
       spo2Widget: null,
       statusWidget: null,
+      svcWidget: null,
       syncing: false,
       syncTimer: null,
     },
 
     onInit() {
+      // Try starting service from page context too — different JS context may succeed
+      if (typeof startService === "function") {
+        try {
+          startService({ url: "app-service/index" });
+          logger.log("page: startService OK");
+        } catch (e) {
+          logger.log("page: startService error: " + String(e));
+        }
+      } else {
+        logger.log("page: startService type=" + typeof startService);
+      }
       this.build();
       this.loadData();
     },
@@ -134,6 +146,15 @@ Page(
         color: 0x666666,
         align_h: hmUI.align.CENTER_H,
       });
+
+      // Service status indicator — shows whether background service is running
+      this.state.svcWidget = hmUI.createWidget(hmUI.widget.TEXT, {
+        x: 0, y: 442, w: W, h: 22,
+        text: "",
+        text_size: 14,
+        color: 0x444444,
+        align_h: hmUI.align.CENTER_H,
+      });
     },
 
     buildRow(y, label, color) {
@@ -181,7 +202,7 @@ Page(
       }
 
       const boResult = readSensor(() => new BloodOxygen().getCurrent());
-      if (boResult && boResult.retCode === 2 && boResult.value > 50) {
+      if (boResult && (boResult.retCode === 2 || boResult.retCode === 1) && boResult.value > 50 && boResult.value <= 100) {
         this.state.spo2Widget.setProperty(hmUI.prop.TEXT, String(boResult.value) + "%");
       }
 
@@ -190,6 +211,19 @@ Page(
         this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Sleep logged today — metrics only");
       } else {
         this.state.statusWidget.setProperty(hmUI.prop.TEXT, "Tap to upload to Sheets");
+      }
+
+      // Service status indicator
+      const svcTs = parseInt(localStorage.getItem("svc_last_start") || "0", 10);
+      if (svcTs > 0) {
+        const minAgo = Math.round((Date.now() - svcTs) / 60000);
+        const chkKey = "checkup_" + getTodayStr();
+        let chkCount = 0;
+        try { chkCount = JSON.parse(localStorage.getItem(chkKey) || "[]").length; } catch(_) {}
+        this.state.svcWidget.setProperty(hmUI.prop.TEXT,
+          "Svc: " + minAgo + "m ago · " + chkCount + " checkups today");
+      } else {
+        this.state.svcWidget.setProperty(hmUI.prop.TEXT, "Svc: not started");
       }
     },
 
