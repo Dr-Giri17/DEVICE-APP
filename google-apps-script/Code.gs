@@ -44,13 +44,15 @@ function doPost(e) {
       }
 
       // 3. DayCheckup: hourly background readings (watch sends only new rows)
+      // Batched setValues — significantly faster than appendRow in a loop
       if (data.checkupReadings && data.checkupReadings.length > 0) {
         var sheet    = getOrCreateDayCheckupSheet();
         var syncDate = (data.timestamp || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
+        var rows     = [];
         for (var i = 0; i < data.checkupReadings.length; i++) {
           var r  = data.checkupReadings[i];
           var ts = r.t ? new Date(r.t).toISOString() : (data.timestamp || new Date().toISOString());
-          sheet.appendRow([
+          rows.push([
             ts,
             syncDate,
             r.hr      != null ? r.hr      : "",
@@ -62,6 +64,7 @@ function doPost(e) {
             r.rrCount || 0,
           ]);
         }
+        sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 9).setValues(rows);
       }
     }
 

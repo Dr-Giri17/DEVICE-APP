@@ -1,15 +1,29 @@
 import { BaseSideService } from "@zeppos/zml/base-side";
 
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzPrT81m1ZdrwqP-KrLB9lS7FZVHyclFqMj6UNLUCGKMmJEWGHsSEL_tuAkuI7oW7RinQ/exec";
+const FETCH_TIMEOUT_MS = 25000;
+
+function fetchWithTimeout(opts, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) { settled = true; reject(new Error("Fetch timeout")); }
+    }, timeoutMs);
+    fetch(opts).then(
+      r => { if (!settled) { settled = true; clearTimeout(timer); resolve(r); } },
+      e => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } }
+    );
+  });
+}
 
 async function postToSheets(data, res) {
   try {
-    const response = await fetch({
+    const response = await fetchWithTimeout({
       url: SHEETS_URL,
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(data),
-    });
+    }, FETCH_TIMEOUT_MS);
 
     let body = response.body;
     if (typeof body === "string") {
@@ -28,8 +42,11 @@ async function postToSheets(data, res) {
       res(null, { success: false, error: "Sheet error" });
     }
   } catch (error) {
-    console.log("[health-sync] postToSheets error: " + String(error));
-    res(null, { success: false, error: "Network error" });
+    const msg = String(error);
+    console.log("[health-sync] postToSheets error: " + msg);
+    const userMsg = msg.indexOf("timeout") >= 0 || msg.indexOf("Timeout") >= 0
+      ? "Timeout — check WiFi" : "Network error";
+    res(null, { success: false, error: userMsg });
   }
 }
 

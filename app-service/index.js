@@ -20,6 +20,25 @@ function dayKey(prefix) {
   return prefix + d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
 }
 
+// Remove spo2_/checkup_ keys older than 30 days to keep localStorage from growing forever
+function cleanupOldStorage() {
+  let removed = 0;
+  for (let i = 30; i < 90; i++) {
+    const d = new Date(Date.now() - i * 86400000);
+    const dateStr = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+    const keys = ["spo2_" + dateStr, "checkup_" + dateStr, "checkup_sync_" + dateStr];
+    for (let k = 0; k < keys.length; k++) {
+      try {
+        if (localStorage.getItem(keys[k]) !== null) {
+          localStorage.removeItem(keys[k]);
+          removed++;
+        }
+      } catch (_) {}
+    }
+  }
+  if (removed > 0) console.log("[svc] cleaned " + removed + " keys older than 30 days");
+}
+
 // ── Night-mode helpers ──────────────────────────────────────────────────────
 
 function isNightEnabled() { return localStorage.getItem("spo2_enabled") !== "false"; }
@@ -110,17 +129,23 @@ function saveSpO2(value) {
 }
 
 function startSpO2Measurement() {
-  console.log("[svc] SpO2 start");
+  console.log("[svc] SpO2 active start");
   stopSensor();
 
   const sensor = new BloodOxygen();
   svcState.sensor = sensor;
   let done = false;
+  let cbCount = 0;
 
   const cb = function() {
     if (done) return;
     try {
       const r = sensor.getCurrent();
+      cbCount++;
+      // Log first 3 callbacks to understand what the hardware returns
+      if (cbCount <= 3) {
+        console.log("[svc] SpO2 cb#" + cbCount + " rc=" + (r && r.retCode) + " v=" + (r && r.value));
+      }
       if (r && (r.retCode === 2 || r.retCode === 1) && r.value > 50 && r.value <= 100) {
         done = true;
         saveSpO2(r.value);
@@ -134,7 +159,11 @@ function startSpO2Measurement() {
   sensor.start();
 
   svcState.measureTimeout = setTimeout(function() {
-    if (!done) { done = true; console.log("[svc] SpO2 timeout"); stopSensor(); }
+    if (!done) {
+      done = true;
+      console.log("[svc] SpO2 timeout cbs=" + cbCount);
+      stopSensor();
+    }
   }, MEASURE_TIMEOUT);
 }
 
@@ -256,6 +285,9 @@ function dayCheckup() {
 AppService({
   onInit() {
     console.log("[svc] ===== SERVICE STARTED ===== bat=" + getBattery() + "% night=" + isNightEnabled());
+
+    // One-shot cleanup of storage older than 30 days
+    cleanupOldStorage();
 
     // Create passive sensors ONCE — reused for all subsequent checkups
     initPassiveSensors();

@@ -88,6 +88,8 @@ Page(
       statusText: null,
       syncing: false,
       syncTimer: null,
+      measureSensor: null,
+      measureTimeout: null,
     },
 
     onInit() {
@@ -299,34 +301,52 @@ Page(
     },
 
     triggerMeasurement() {
+      // Clean up any previous active session before starting a new one
+      this.stopMeasurement();
+
       this.state.currentWidget.setProperty(hmUI.prop.TEXT, "...");
       try {
         const sensor = new BloodOxygen();
+        this.state.measureSensor = sensor;
         let done = false;
+        let cbCount = 0;
         const cb = () => {
           if (done) return;
           try {
             const result = sensor.getCurrent();
+            cbCount++;
+            if (cbCount <= 3) {
+              console.log("[spo2-page] cb#" + cbCount + " rc=" + (result && result.retCode) + " v=" + (result && result.value));
+            }
             if (result && (result.retCode === 2 || result.retCode === 1) && result.value > 50 && result.value <= 100) {
               done = true;
               this.state.currentWidget.setProperty(hmUI.prop.TEXT, String(result.value) + "%");
-              sensor.offChange(cb);
-              sensor.stop();
+              this.stopMeasurement();
             }
           } catch (_) {}
         };
         sensor.onChange(cb);
         sensor.start();
-        setTimeout(() => {
+        this.state.measureTimeout = setTimeout(() => {
           if (!done) {
             done = true;
-            try { sensor.offChange(cb); sensor.stop(); } catch (_) {}
+            console.log("[spo2-page] timeout cbs=" + cbCount);
+            this.stopMeasurement();
             this.state.currentWidget.setProperty(hmUI.prop.TEXT, "--");
           }
         }, 30000);
       } catch (_) {
         this.state.currentWidget.setProperty(hmUI.prop.TEXT, "--");
       }
+    },
+
+    stopMeasurement() {
+      const sensor = this.state.measureSensor;
+      const timeout = this.state.measureTimeout;
+      this.state.measureSensor = null;
+      this.state.measureTimeout = null;
+      if (timeout) clearTimeout(timeout);
+      if (sensor) { try { sensor.stop(); } catch (_) {} }
     },
 
     toggleMonitoring() {
@@ -389,6 +409,7 @@ Page(
 
     onDestroy() {
       if (this.state.syncTimer) clearTimeout(this.state.syncTimer);
+      this.stopMeasurement();
     },
   })
 );

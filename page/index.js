@@ -17,6 +17,16 @@ function readSensor(fn) {
   try { return fn(); } catch (_) { return null; }
 }
 
+function readSleepInfo() {
+  try {
+    const s = new Sleep();
+    if (typeof s.updateInfo === "function") {
+      try { s.updateInfo(); } catch (_) {}
+    }
+    return s.getInfo();
+  } catch (_) { return null; }
+}
+
 function isoTimestamp() {
   try { return new Date().toISOString(); } catch (_) { return String(Date.now()); }
 }
@@ -163,7 +173,7 @@ Page(
         this.state.caloriesWidget.setProperty(hmUI.prop.TEXT, String(calVal) + " kcal");
       }
 
-      const sleepInfo = readSensor(() => new Sleep().getInfo());
+      const sleepInfo = readSleepInfo();
       if (sleepInfo && sleepInfo.totalTime > 0) {
         const h = Math.floor(sleepInfo.totalTime / 60);
         const m = sleepInfo.totalTime % 60;
@@ -205,7 +215,7 @@ Page(
 
       // Daily sleep data — only if not yet synced today and data is available
       const sleepSyncedToday = isSleepSyncedToday();
-      const sleepInfo = !sleepSyncedToday ? readSensor(() => new Sleep().getInfo()) : null;
+      const sleepInfo = !sleepSyncedToday ? readSleepInfo() : null;
       const hasSleepData = !!(sleepInfo && sleepInfo.totalTime > 0);
 
       // Hourly day-checkup readings — only new ones since last sync
