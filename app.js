@@ -1,13 +1,13 @@
 import { BaseApp } from "@zeppos/zml/base-app";
-import { startService } from "@zos/app-service";
+import { startService } from "@zos/router";
 
 App(
   BaseApp({
     globalData: {},
     onCreate() {
       try {
-        startService({ file: "app-service/index" });
-        console.log("[health-sync] app-service started");
+        startService({ url: "app-service/index" });
+        console.log("[health-sync] app-service started OK");
       } catch (e) {
         console.log("[health-sync] startService error: " + String(e));
       }
