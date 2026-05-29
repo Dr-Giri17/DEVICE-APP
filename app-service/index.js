@@ -1,10 +1,18 @@
 import { BloodOxygen, Battery } from "@zos/sensor";
 import { localStorage } from "@zos/storage";
 
-const INTERVAL_MS = 10 * 60 * 1000;
+const INTERVAL_MS = 5 * 60 * 1000;
 const MEASURE_TIMEOUT_MS = 2 * 60 * 1000;
-const SLEEP_START = 22;
-const SLEEP_END = 8;
+
+// Must match DURATION_OPTIONS in page/spo2.js
+const DURATION_MS_OPTIONS = [
+  30 * 60 * 1000,
+  60 * 60 * 1000,
+  2 * 60 * 60 * 1000,
+  4 * 60 * 60 * 1000,
+  6 * 60 * 60 * 1000,
+  8 * 60 * 60 * 1000,
+];
 
 function pad2(n) { return n < 10 ? "0" + n : String(n); }
 
@@ -13,13 +21,20 @@ function dateKey() {
   return "spo2_" + d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
 }
 
-function isNightHour() {
-  const h = new Date().getHours();
-  return h >= SLEEP_START || h < SLEEP_END;
-}
-
 function isEnabled() {
   return localStorage.getItem("spo2_enabled") !== "false";
+}
+
+function getDurationMs() {
+  const idx = parseInt(localStorage.getItem("spo2_dur_idx") || "3", 10);
+  const i = Math.min(Math.max(idx, 0), DURATION_MS_OPTIONS.length - 1);
+  return DURATION_MS_OPTIONS[i];
+}
+
+function isDurationExpired() {
+  const startTime = parseInt(localStorage.getItem("spo2_start_time") || "0", 10);
+  if (!startTime) return false;
+  return Date.now() - startTime > getDurationMs();
 }
 
 function getBattery() {
@@ -42,7 +57,7 @@ function saveReading(value) {
   let arr;
   try { arr = JSON.parse(localStorage.getItem(key) || "[]"); } catch (_) { arr = []; }
   arr.push({ v: value, t: Date.now() });
-  if (arr.length > 120) arr = arr.slice(-120);
+  if (arr.length > 288) arr = arr.slice(-288); // max 24h at 5-min intervals
   localStorage.setItem(key, JSON.stringify(arr));
   console.log("[spo2-svc] saved " + value + "% count=" + arr.length);
 }
@@ -70,16 +85,14 @@ function stopSensor() {
 }
 
 function startMeasurement() {
-  const bat = getBattery();
-  const h = new Date().getHours();
-  console.log("[spo2-svc] startMeasurement hour=" + h + " bat=" + bat + "%");
+  console.log("[spo2-svc] startMeasurement bat=" + getBattery() + "%");
   stopSensor();
 
   const sensor = new BloodOxygen();
   svcState.sensor = sensor;
   let done = false;
 
-  const cb = () => {
+  const cb = function() {
     if (done) return;
     try {
       const result = sensor.getCurrent();
@@ -89,7 +102,6 @@ function startMeasurement() {
       if (rc === 2 && val > 50) {
         done = true;
         saveReading(val);
-        // stop asynchronously — avoids stopping inside the callback
         setTimeout(function() { stopSensor(); }, 0);
       }
     } catch (e) {
@@ -105,30 +117,37 @@ function startMeasurement() {
   svcState.measureTimeout = setTimeout(function() {
     if (!done) {
       done = true;
-      console.log("[spo2-svc] measurement timeout — no valid reading");
+      console.log("[spo2-svc] measurement timeout");
       stopSensor();
     }
   }, MEASURE_TIMEOUT_MS);
 }
 
+function checkAndMeasure() {
+  if (!isEnabled()) {
+    console.log("[spo2-svc] disabled");
+    return;
+  }
+  if (isDurationExpired()) {
+    console.log("[spo2-svc] duration expired — auto-disabling");
+    localStorage.setItem("spo2_enabled", "false");
+    stopSensor();
+    return;
+  }
+  if (hasBattery()) {
+    startMeasurement();
+  } else {
+    console.log("[spo2-svc] low battery, skipping");
+  }
+}
+
 AppService({
   onInit() {
-    console.log("[spo2-svc] onInit enabled=" + isEnabled() + " night=" + isNightHour() + " bat=" + getBattery() + "%");
-    if (!isEnabled()) {
-      console.log("[spo2-svc] monitoring disabled, skipping");
-      return;
-    }
-    if (isNightHour() && hasBattery()) {
-      startMeasurement();
-    } else {
-      console.log("[spo2-svc] not night or low battery, waiting for interval");
-    }
+    console.log("[spo2-svc] onInit enabled=" + isEnabled() + " bat=" + getBattery() + "%");
+    checkAndMeasure();
     svcState.intervalId = setInterval(function() {
-      console.log("[spo2-svc] interval tick night=" + isNightHour() + " enabled=" + isEnabled());
-      if (!isEnabled()) return;
-      if (isNightHour() && hasBattery()) {
-        startMeasurement();
-      }
+      console.log("[spo2-svc] interval tick");
+      checkAndMeasure();
     }, INTERVAL_MS);
   },
 
