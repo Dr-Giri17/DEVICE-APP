@@ -307,7 +307,7 @@ Page(
           if (done) return;
           try {
             const result = sensor.getCurrent();
-            if (result && result.retCode === 2 && result.value > 50) {
+            if (result && (result.retCode === 2 || result.retCode === 1) && result.value > 50 && result.value <= 100) {
               done = true;
               this.state.currentWidget.setProperty(hmUI.prop.TEXT, String(result.value) + "%");
               sensor.offChange(cb);

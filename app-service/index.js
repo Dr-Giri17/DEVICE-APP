@@ -175,12 +175,19 @@ function runHrvSession(onDone) {
   const hrs    = [];
   const rrs    = [];
 
+  let _logged = false;
   const cb = function() {
     try {
-      const r = sensor.getCurrent();
-      if (!r || r.value < 30) return;
-      hrs.push(r.value);
-      if (r.rrValue && r.rrValue > 200 && r.rrValue < 2000) rrs.push(r.rrValue);
+      const raw = sensor.getCurrent();
+      if (!_logged) { _logged = true; console.log("[svc] HRV raw=" + JSON.stringify(raw)); }
+      // getCurrent() returns a plain number on ZeppOS 3.0; guard for object form too
+      const hrVal = (raw !== null && raw !== undefined && typeof raw === "object")
+        ? raw.value : Number(raw);
+      if (!hrVal || hrVal < 30 || hrVal > 250) return;
+      hrs.push(hrVal);
+      // rrValue only present when platform exposes beat-to-beat data
+      const rr = (typeof raw === "object" && raw !== null) ? raw.rrValue : null;
+      if (rr && rr > 200 && rr < 2000) rrs.push(rr);
     } catch (_) {}
   };
 
@@ -202,7 +209,7 @@ function runHrvSession(onDone) {
       for (let i = 1; i < rrs.length; i++) { const d = rrs[i] - rrs[i - 1]; sq += d * d; }
       rmssd = Math.round(Math.sqrt(sq / (rrs.length - 1)));
     }
-    console.log("[svc] HRV done hr=" + avgHr + " rmssd=" + rmssd + " rr=" + rrs.length);
+    console.log("[svc] HRV done hr=" + avgHr + " rmssd=" + rmssd + " rr=" + rrs.length + " samples=" + hrs.length);
     onDone(avgHr, rmssd, rrs.length);
   }, HRV_WINDOW_MS);
 }
