@@ -14,7 +14,10 @@ function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
 
-    if (data.type === "spo2") {
+    if (data.type === "spo2_protocol") {
+      appendSpo2ProtocolBatch(data);
+
+    } else if (data.type === "spo2") {
       // Overnight SpO2 session summary
       getOrCreateSpo2Sheet().appendRow([
         data.timestamp || new Date().toISOString(),
@@ -132,6 +135,132 @@ function getOrCreateSpo2Sheet() {
     sheet = ss.insertSheet("SpO2");
     sheet.appendRow(["Timestamp", "Night Date", "Min SpO2 (%)", "Avg SpO2 (%)", "Max SpO2 (%)", "Reading Count"]);
     sheet.getRange(1, 1, 1, 6).setFontWeight("bold");
+  }
+  return sheet;
+}
+
+function appendSpo2ProtocolBatch(data) {
+  var cycles = data.cycles || [];
+  if (cycles.length > 0) {
+    var cycleSheet = getOrCreateSpo2ProtocolCycleSheet();
+    var cycleRows = [];
+    for (var i = 0; i < cycles.length; i++) {
+      var c = cycles[i];
+      cycleRows.push([
+        data.timestamp || new Date().toISOString(),
+        c.protocol_id || "",
+        c.cycle_index || 0,
+        c.state || "",
+        c.started_at || "",
+        c.ended_at || "",
+        c.duration_sec != null ? c.duration_sec : "",
+        c.spo2_value != null ? c.spo2_value : "",
+        c.spo2_time || "",
+        c.ret_code != null ? c.ret_code : "",
+        c.ret_status || "",
+        c.success === true,
+        c.failure_reason || "",
+        c.cooldown_sec != null ? c.cooldown_sec : "",
+        c.battery_level != null ? c.battery_level : "",
+        c.source || "active_measurement",
+        c.confidence || "experimental",
+        c.clinical_use || "not_validated",
+        c.notes || "",
+      ]);
+    }
+    cycleSheet.getRange(cycleSheet.getLastRow() + 1, 1, cycleRows.length, 19).setValues(cycleRows);
+  }
+
+  if (data.summary) {
+    var s = data.summary;
+    getOrCreateSpo2ProtocolSummarySheet().appendRow([
+      s.generated_at || data.timestamp || new Date().toISOString(),
+      s.protocol_id || "",
+      s.total_cycles || 0,
+      s.successful_cycles || 0,
+      s.success_rate || 0,
+      s.timeout_count || 0,
+      s.invalid_signal_count || 0,
+      s.not_wearing_count || 0,
+      s.invalid_wearing_count || 0,
+      s.average_duration_sec != null ? s.average_duration_sec : "",
+      s.min_spo2 != null ? s.min_spo2 : "",
+      s.avg_spo2 != null ? s.avg_spo2 : "",
+      s.max_spo2 != null ? s.max_spo2 : "",
+      s.recommended_min_cooldown_sec || 0,
+      s.reliability_score || 0,
+      s.confidence || "experimental",
+      s.clinical_use || "not_validated",
+      s.unsafe === true,
+      s.unsafe_reason || "",
+    ]);
+  }
+
+  var historical = data.historical || [];
+  if (historical.length > 0) {
+    var histSheet = getOrCreateSpo2HistoricalSheet();
+    var histRows = [];
+    for (var h = 0; h < historical.length; h++) {
+      var r = historical[h];
+      histRows.push([
+        data.timestamp || new Date().toISOString(),
+        r.method || "",
+        r.historical_read_supported === true,
+        r.success === true,
+        r.source || "historical_read",
+        r.confidence || "experimental",
+        r.clinical_use || "not_validated",
+        r.raw || "",
+        r.notes || r.failure_reason || "",
+      ]);
+    }
+    histSheet.getRange(histSheet.getLastRow() + 1, 1, histRows.length, 9).setValues(histRows);
+  }
+}
+
+function getOrCreateSpo2ProtocolCycleSheet() {
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("SpO2ProtocolCycles");
+  if (!sheet) {
+    sheet = ss.insertSheet("SpO2ProtocolCycles");
+    sheet.appendRow([
+      "Batch Timestamp", "Protocol ID", "Cycle Index", "State", "Started At", "Ended At",
+      "Duration (sec)", "SpO2 (%)", "SpO2 Time", "Ret Code", "Ret Status", "Success",
+      "Failure Reason", "Cooldown (sec)", "Battery (%)", "Source", "Confidence",
+      "Clinical Use", "Notes",
+    ]);
+    sheet.getRange(1, 1, 1, 19).setFontWeight("bold");
+  }
+  return sheet;
+}
+
+function getOrCreateSpo2ProtocolSummarySheet() {
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("SpO2ProtocolSummary");
+  if (!sheet) {
+    sheet = ss.insertSheet("SpO2ProtocolSummary");
+    sheet.appendRow([
+      "Generated At", "Protocol ID", "Total Cycles", "Successful Cycles", "Success Rate (%)",
+      "Timeout Count", "Invalid Signal Count", "Not Wearing Count", "Invalid Wearing Count",
+      "Average Duration (sec)", "Min SpO2 (%)", "Avg SpO2 (%)", "Max SpO2 (%)",
+      "Recommended Min Cooldown (sec)", "Reliability Score", "Confidence", "Clinical Use",
+      "Unsafe", "Unsafe Reason",
+    ]);
+    sheet.getRange(1, 1, 1, 19).setFontWeight("bold");
+  }
+  return sheet;
+}
+
+function getOrCreateSpo2HistoricalSheet() {
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("SpO2HistoricalRead");
+  if (!sheet) {
+    sheet = ss.insertSheet("SpO2HistoricalRead");
+    sheet.appendRow([
+      "Batch Timestamp", "Method", "Supported", "Success", "Source",
+      "Confidence", "Clinical Use", "Raw", "Notes",
+    ]);
+    sheet.getRange(1, 1, 1, 9).setFontWeight("bold");
   }
   return sheet;
 }

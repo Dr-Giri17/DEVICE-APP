@@ -62,6 +62,10 @@ AppSideService(
         postToSheets(req.params, res);
       } else if (req.method === "SYNC_SPO2") {
         postToSheets(req.params, res);
+      } else if (req.method === "SYNC_SPO2_PROTOCOL") {
+        postToSheets(req.params, res);
+      } else {
+        res(null, { success: false, error: "sync method missing" });
       }
     },
 
