@@ -1,19 +1,90 @@
 // HealthSync — Google Apps Script Web App
-// Deploy: Extensions > Apps Script > Deploy > New Deployment > Web App
+// Supabase-primary ingest + Google Sheets fallback/debug.
+// Deploy: Extensions > Apps Script > Deploy > Manage deployments > Edit > New version
 //   Execute as: Me  |  Who has access: Anyone
+//
+// Required Script Properties:
+//   SUPABASE_URL
+//   SUPABASE_ANON_KEY
+//   HEALTHSYNC_INGEST_TOKEN
 
 var SPREADSHEET_ID = "13gtDCjh1GMm80rFp5wwVmdznQ7D6Wee9htW_XSQqdYQ";
 
-// ── Sheet names ─────────────────────────────────────────────────────────────
-// Metrics      — on-demand snapshot (HR, steps, calories, SpO2) — every SYNC NOW
-// DailySummary — sleep data, one row per calendar day (upserted)
-// DayCheckup   — hourly background readings all day (HR, steps, cal, SpO2, stress, RMSSD)
-// SpO2         — overnight SpO2 session summaries from SpO2 Monitor page
+// ── Main entrypoint ──────────────────────────────────────────────────────────
 
 function doPost(e) {
+  var data;
   try {
-    var data = JSON.parse(e.postData.contents);
+    data = JSON.parse(e.postData.contents);
+  } catch (err) {
+    return jsonResponse({ success: false, error: "Invalid JSON: " + err.message });
+  }
 
+  var supabaseResult = sendToSupabase(data);
+  var sheetsResult = writeToSheets(data);
+
+  var success = supabaseResult.success === true || sheetsResult.success === true;
+  return jsonResponse({
+    success: success,
+    supabase_success: supabaseResult.success === true,
+    supabase_error: supabaseResult.error || "",
+    sheets_success: sheetsResult.success === true,
+    sheets_error: sheetsResult.error || "",
+    type: data.type || "health",
+  });
+}
+
+function doGet(e) {
+  return jsonResponse({ status: "ok", message: "HealthSync endpoint is live" });
+}
+
+// ── Supabase primary ingest ──────────────────────────────────────────────────
+
+function sendToSupabase(data) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var supabaseUrl = props.getProperty("SUPABASE_URL");
+    var anonKey = props.getProperty("SUPABASE_ANON_KEY");
+    var ingestToken = props.getProperty("HEALTHSYNC_INGEST_TOKEN");
+
+    if (!supabaseUrl || !anonKey || !ingestToken) {
+      throw new Error("Missing Script Properties: SUPABASE_URL / SUPABASE_ANON_KEY / HEALTHSYNC_INGEST_TOKEN");
+    }
+
+    var endpoint = supabaseUrl.replace(/\/$/, "") + "/rest/v1/rpc/healthsync_ingest";
+    var response = UrlFetchApp.fetch(endpoint, {
+      method: "post",
+      contentType: "application/json",
+      muteHttpExceptions: true,
+      headers: {
+        apikey: anonKey,
+        Authorization: "Bearer " + anonKey,
+      },
+      payload: JSON.stringify({
+        p_token: ingestToken,
+        p_payload: data,
+      }),
+    });
+
+    var code = response.getResponseCode();
+    var text = response.getContentText();
+    if (code >= 200 && code < 300) {
+      console.log("Supabase ingest OK: " + text);
+      return { success: true, body: text };
+    }
+
+    console.log("Supabase ingest failed HTTP " + code + ": " + text);
+    return { success: false, error: "HTTP " + code + ": " + text };
+  } catch (err) {
+    console.log("Supabase ingest failed: " + err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// ── Google Sheets fallback/debug ─────────────────────────────────────────────
+
+function writeToSheets(data) {
+  try {
     if (data.type === "spo2_protocol") {
       appendSpo2ProtocolBatch(data);
 
@@ -71,14 +142,12 @@ function doPost(e) {
       }
     }
 
-    return jsonResponse({ success: true });
+    console.log("Sheets write OK");
+    return { success: true };
   } catch (err) {
-    return jsonResponse({ success: false, error: err.message });
+    console.log("Sheets write failed: " + err.message);
+    return { success: false, error: err.message };
   }
-}
-
-function doGet(e) {
-  return jsonResponse({ status: "ok", message: "HealthSync endpoint is live" });
 }
 
 // ── Sheet helpers ────────────────────────────────────────────────────────────
@@ -216,6 +285,29 @@ function appendSpo2ProtocolBatch(data) {
     }
     histSheet.getRange(histSheet.getLastRow() + 1, 1, histRows.length, 9).setValues(histRows);
   }
+
+  var debugRows = data.debugRows || [];
+  if (debugRows.length > 0) {
+    var debugSheet = getOrCreateSpo2RawDebugSheet();
+    var debugSheetRows = [];
+    for (var d = 0; d < debugRows.length; d++) {
+      var row = debugRows[d];
+      debugSheetRows.push([
+        row.timestamp || data.timestamp || new Date().toISOString(),
+        row.event || "",
+        row.source || "",
+        row.ret_code != null ? row.ret_code : "",
+        row.ret_status || "",
+        row.value != null ? row.value : "",
+        row.duration_sec != null ? row.duration_sec : "",
+        row.raw_json ? JSON.stringify(row.raw_json) : JSON.stringify(row),
+        row.confidence || "experimental",
+        row.clinical_use || "not_validated",
+        row.notes || "",
+      ]);
+    }
+    debugSheet.getRange(debugSheet.getLastRow() + 1, 1, debugSheetRows.length, 11).setValues(debugSheetRows);
+  }
 }
 
 function getOrCreateSpo2ProtocolCycleSheet() {
@@ -261,6 +353,20 @@ function getOrCreateSpo2HistoricalSheet() {
       "Confidence", "Clinical Use", "Raw", "Notes",
     ]);
     sheet.getRange(1, 1, 1, 9).setFontWeight("bold");
+  }
+  return sheet;
+}
+
+function getOrCreateSpo2RawDebugSheet() {
+  var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("SpO2RawDebug");
+  if (!sheet) {
+    sheet = ss.insertSheet("SpO2RawDebug");
+    sheet.appendRow([
+      "Timestamp", "Event", "Source", "Ret Code", "Ret Status", "Value",
+      "Duration (sec)", "Raw JSON", "Confidence", "Clinical Use", "Notes",
+    ]);
+    sheet.getRange(1, 1, 1, 11).setFontWeight("bold");
   }
   return sheet;
 }
