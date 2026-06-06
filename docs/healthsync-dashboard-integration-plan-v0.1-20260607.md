@@ -2,9 +2,46 @@
 
 ## Status
 
-This is a documentation-only integration plan for bringing confirmed HealthSync metrics into a future BodyDharma / HOS dashboard layer.
+This is a documentation-only integration plan for bringing confirmed HealthSync metrics into the broader Self-Care Operating System / HealthcareOS dashboard layer.
 
 No application code is changed by this document.
+
+## Architecture clarification
+
+HealthcareOS / Self-Care OS is the shared system layer for:
+
+- data aggregation
+- device ingestion
+- longitudinal monitoring
+- clinical context
+- health intelligence
+- supervised recommendations
+- shared client identity/profile
+
+BodyDharma App is not a completely separate product. It is a physiotherapy and rehabilitation application branch built on the same Self-Care OS / HealthcareOS core.
+
+BodyDharma App owns the rehabilitation workflow:
+
+- rehab cases
+- baseline assessment
+- posture / movement assessment
+- clinical attachments
+- clinician notes
+- rehab planning
+- session workflow
+
+HealthSync is a device ingestion module inside the same broader OS ecosystem. It collects metrics from wearable/device sources and sends confirmed metrics into the HealthcareOS data layer.
+
+The intended relationship is:
+
+Devices / HealthSync -> HealthcareOS Data Layer -> HealthcareOS Intelligence Layer -> BodyDharma App can consume selected summarized context.
+
+Therefore:
+
+- HealthSync raw metrics are primarily owned by HealthcareOS / HOS Data Layer.
+- HealthcareOS Dashboard is the primary dashboard target for HealthSync metrics.
+- BodyDharma App is a downstream contextual consumer, not the owner of raw wearable metrics.
+- BodyDharma should receive selected recovery/load context only when useful for clinician-facing rehab decisions.
 
 ## Current confirmed HealthSync baseline
 
@@ -170,9 +207,17 @@ Only display HRV when a live payload or normalized row confirms rmssd / rr_count
 
 ## Recommended implementation order
 
-### Slice 1 — Read-only dashboard panel
+### Slice 1 — HealthcareOS read-only dashboard panel
 
-Add a clinician/admin-facing HealthSync panel using the admin view.
+Add an admin/clinician-facing HealthSync panel using the admin view.
+
+Primary target:
+
+- HealthcareOS / HOS dashboard
+
+Secondary future consumer:
+
+- BodyDharma App, only through selected recovery/load context from HealthcareOS
 
 Minimum fields:
 
@@ -203,6 +248,7 @@ Before using this with multiple clients, review:
 - patient_id mapping
 - who owns the watch/device
 - whether the payload should be linked to Vladimir only or other clients later
+- how the shared Self-Care OS client profile maps to BodyDharma rehab cases
 
 ### Slice 4 — Optional trend charts
 
@@ -214,6 +260,20 @@ Only after stable read-only cards exist:
 - sleep_minutes trend
 - steps trend
 
+### Slice 5 — BodyDharma contextual bridge
+
+Only after HealthcareOS dashboard integration is stable, define a limited bridge into BodyDharma App.
+
+Possible contextual outputs:
+
+- latest recovery context
+- sleep quality context
+- fatigue/load status
+- sync freshness
+- missing data warning
+
+BodyDharma must not own or directly reinterpret raw HealthSync metrics in v0.1.
+
 ## Out of scope for v0.1
 
 - HRV implementation
@@ -224,22 +284,26 @@ Only after stable read-only cards exist:
 - AI reasoning over HealthSync values
 - client-facing interpretation
 - production HOS intervention selection
+- direct BodyDharma ownership of raw wearable metrics
 
 ## Open questions
 
-1. Should the first dashboard panel live in BodyDharma app or HOS dashboard?
+1. Should the first dashboard panel live in HealthcareOS dashboard only, before any BodyDharma bridge?
 2. Should it be admin-only first?
 3. Should it be linked only to Vladimir initially?
 4. How should stale sync status be defined?
 5. Should HealthSync values be copied into daily_logs later, or remain in HealthSync-specific tables/views?
+6. What summarized recovery/load context should BodyDharma eventually receive from HealthcareOS?
 
 ## Current recommendation
 
 Use HealthSync-specific tables/views as the source of truth for now.
 
-Do not copy HealthSync values into general daily_logs until dashboard needs and patient mapping are reviewed.
+Do not copy HealthSync values into general daily_logs until dashboard needs, patient mapping, and HealthcareOS identity mapping are reviewed.
 
-Keep the first UI integration admin-facing, read-only, and non-clinical.
+Keep the first UI integration HealthcareOS-facing, admin/clinician-facing, read-only, and non-clinical.
+
+BodyDharma App should be treated as a synchronized rehabilitation branch within the same Self-Care OS ecosystem, not as a separate owner of HealthSync data.
 
 ## Documentation status
 
