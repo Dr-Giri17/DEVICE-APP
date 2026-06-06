@@ -12,6 +12,8 @@ pipeline.
 
 This document is a safety specification only. It does not authorize code
 changes, database migrations, active SpO2 measurement, or production export.
+In v0.1, no SpO2 sensor API call, passive read, historical read, active test
+pulse, or storage/export implementation is approved.
 
 ## 2. Non-goals
 
@@ -29,15 +31,19 @@ SpO2 Lab v0.1 explicitly does not include:
 - Changes to `public.healthsync_ingest()`.
 - Changes to the current Supabase schema.
 - Production integration with HealthSync ingest.
+- Any `BloodOxygen` API call, including passive or historical reads.
+- Any SpO2 data export, even if marked experimental.
 
 ## 3. Safety boundaries
 
-Any future SpO2 Lab implementation must remain manual-only and explicitly
-triggered by the user.
+Any future SpO2 Lab implementation, if later approved, must remain manual-only
+and explicitly triggered by the user. This v0.1 document does not approve that
+implementation.
 
 Required safety boundaries:
 
 - No automatic SpO2 calls on page init.
+- No SpO2 sensor object creation on page init.
 - No background active measurement.
 - No silent measurement.
 - No frequent polling.
@@ -70,6 +76,9 @@ This section is non-binding and not implemented.
 No migration is added by this spec. No production table is created. These fields
 are only a starting point for future design review if SpO2 Lab becomes safe
 enough to prototype.
+
+Do not create these fields, tables, events, or exports from this document alone.
+They require a later reviewed implementation plan and explicit approval.
 
 Possible future event or table fields:
 
@@ -131,6 +140,13 @@ No SpO2 Lab code may be written until these gates are reviewed:
     unchanged.
 11. Create a separate implementation plan.
 12. Review and approve the implementation plan before code changes.
+13. Create or update a later safety spec version that explicitly authorizes the
+    proposed implementation scope.
+14. Confirm that v0.1 documentation-only status is no longer being used as the
+    implementation authorization.
+
+This section is a blocker checklist, not an implementation instruction. Passing
+the checklist does not by itself authorize code changes.
 
 Minimum review questions:
 
@@ -143,8 +159,29 @@ Minimum review questions:
 - Does the implementation avoid HealthSync Core?
 - Does the implementation avoid production ingest?
 - Does the implementation avoid patient-facing interpretation?
+- Does the implementation avoid creating any Supabase migration unless that
+  migration has separate explicit approval?
 
-## 6. Branch policy
+## 6. Automation / AI guardrails
+
+Codex, Claude, or any other coding agent must treat this document as a safety
+boundary, not an implementation request.
+
+Agents must not infer permission to:
+
+- Add SpO2 measurement code.
+- Instantiate `BloodOxygen`.
+- Add polling loops.
+- Add background services.
+- Add Google Apps Script routes for SpO2 Lab.
+- Add Supabase migrations for SpO2 Lab.
+- Add production ingest paths.
+- Convert conceptual fields into schema.
+
+If asked to implement SpO2 Lab from this document alone, the correct behavior is
+to stop and request a separate approved implementation plan.
+
+## 7. Branch policy
 
 Future SpO2 work must happen only in a dedicated experimental branch.
 
@@ -152,10 +189,10 @@ Branch requirements:
 
 - Use an `experiment/` branch name.
 - Keep implementation isolated from HealthSync Core.
-- Do not modify stable sync pages unless explicitly approved.
-- Do not modify Google Apps Script unless explicitly approved.
-- Do not modify `public.healthsync_ingest()` unless explicitly approved.
-- Do not add Supabase production migrations unless explicitly approved.
+- Do not modify stable sync pages.
+- Do not modify Google Apps Script.
+- Do not modify `public.healthsync_ingest()`.
+- Do not add Supabase production migrations.
 - Do not merge into the production HealthSync path without separate review.
 
 Any production integration requires:
@@ -166,7 +203,7 @@ Any production integration requires:
 4. Manual test evidence from Amazfit Active 2.
 5. Confirmation that stable HealthSync ingest remains unaffected.
 
-## 7. Current safe baseline
+## 8. Current safe baseline
 
 HealthSync 1.14.0 Supabase-primary ingest is confirmed working after Zepp app /
 watch update and after ingest-token rotation.
