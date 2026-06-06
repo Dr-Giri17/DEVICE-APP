@@ -2,13 +2,21 @@
 
 ## Status
 
-This is a documentation-only integration plan for bringing confirmed HealthSync metrics into the broader Self-Care Operating System / HealthcareOS dashboard layer.
+This is a documentation-only integration plan for bringing confirmed HealthSync metrics into the broader HealthcareOS dashboard layer.
 
 No application code is changed by this document.
 
+## Naming decision
+
+Use `HealthcareOS` / `Healthcare OS` as the current system name.
+
+Do not use `Self-Care OS` in project documentation for now.
+
+The name may be reviewed later if naming, trademark, market-positioning, or competitor research shows that another name is needed.
+
 ## Architecture clarification
 
-HealthcareOS / Self-Care OS is the shared system layer for:
+HealthcareOS is the shared system layer for:
 
 - data aggregation
 - device ingestion
@@ -18,7 +26,7 @@ HealthcareOS / Self-Care OS is the shared system layer for:
 - supervised recommendations
 - shared client identity/profile
 
-BodyDharma App is not a completely separate product. It is a physiotherapy and rehabilitation application branch built on the same Self-Care OS / HealthcareOS core.
+BodyDharma App is not a completely separate product. It is a physiotherapy and rehabilitation application branch built on the same HealthcareOS core.
 
 BodyDharma App owns the rehabilitation workflow:
 
@@ -30,7 +38,7 @@ BodyDharma App owns the rehabilitation workflow:
 - rehab planning
 - session workflow
 
-HealthSync is a device ingestion module inside the same broader OS ecosystem. It collects metrics from wearable/device sources and sends confirmed metrics into the HealthcareOS data layer.
+HealthSync is a device ingestion module inside the same broader HealthcareOS ecosystem. It collects metrics from wearable/device sources and sends confirmed metrics into the HealthcareOS data layer.
 
 The intended relationship is:
 
@@ -248,7 +256,7 @@ Before using this with multiple clients, review:
 - patient_id mapping
 - who owns the watch/device
 - whether the payload should be linked to Vladimir only or other clients later
-- how the shared Self-Care OS client profile maps to BodyDharma rehab cases
+- how the shared HealthcareOS client profile maps to BodyDharma rehab cases
 
 ### Slice 4 — Optional trend charts
 
@@ -303,7 +311,7 @@ Do not copy HealthSync values into general daily_logs until dashboard needs, pat
 
 Keep the first UI integration HealthcareOS-facing, admin/clinician-facing, read-only, and non-clinical.
 
-BodyDharma App should be treated as a synchronized rehabilitation branch within the same Self-Care OS ecosystem, not as a separate owner of HealthSync data.
+BodyDharma App should be treated as a synchronized rehabilitation branch within the same HealthcareOS ecosystem, not as a separate owner of HealthSync data.
 
 ## Documentation status
 
