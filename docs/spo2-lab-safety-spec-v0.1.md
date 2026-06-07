@@ -15,6 +15,13 @@ changes, database migrations, active SpO2 measurement, or production export.
 In v0.1, no SpO2 sensor API call, passive read, historical read, active test
 pulse, or storage/export implementation is approved.
 
+Companion documentation:
+
+- `docs/spo2-lab-api-inventory-v0.1.md` inventories documented Zepp OS SpO2
+  capabilities as a blocklist, not an implementation plan.
+- `docs/spo2-lab-risk-model-v0.1.md` describes safety risks and controls; it
+  does not authorize any SpO2 API call.
+
 ## 2. Non-goals
 
 SpO2 Lab v0.1 explicitly does not include:
