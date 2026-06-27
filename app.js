@@ -1,3 +1,4 @@
+// sandbox-hermes: trivial reversible sandbox marker (safe to remove)
 import { BaseApp } from "@zeppos/zml/base-app";
 import { startService } from "@zos/router";
 
